@@ -1,7 +1,29 @@
->[!CAUTION]
-> This application does not function as intended due to breaking changes in the latest Steam Client releases! ( see: https://github.com/m4dEngi/RemotePlayWhatever/issues/285 https://github.com/m4dEngi/RemotePlayWhatever/issues/279 )
-> Consider using an [alternative](#alternatives)!
-
+>[!NOTE]
+> **About this fork.** This fork works with current Steam clients. **To install on Windows,** download `RemotePlayWhatever-win64.zip` from the [latest release](https://github.com/Casual-Gamer8001/RemotePlayWhatever/releases/latest), unzip it anywhere and run `RemotePlayWhatever.exe` (everything it needs is included). From then on it keeps itself up to date: when a new version is published here, it offers a one-click update. Every push is built by GitHub Actions.
+>
+> It is upstream RemotePlayWhatever plus:
+> - the Steam-update fix from [pull request #289](https://github.com/m4dEngi/RemotePlayWhatever/pull/289) by @okabeeer: Steam's internal functions are looked up by name, so Steam updates don't break it, and invites create a real Remote Play Together group so guests can play, not just watch. **The fix only works in 64-bit builds** (`cmake -B build -A x64`).
+> - non-Steam games (emulators and other shortcuts) are shown by name, and sharing stops by itself when the game closes, so guests don't keep seeing your desktop
+> - a new look: the game you're sharing at the top of the main window with its picture from your Steam library, what guests will see, the guest link and session buttons, and short messages in the window (invite sent, link copied) instead of pop-ups; round avatars with status dots and an Invite button for each friend (clicking a friend's row no longer sends an invite by accident); and a guest controls window with a card per guest, keyboard / mouse / controller toggles with icons, and how long each guest has been there
+> - dark or light to match Windows (it switches when Windows does; Options > Theme, also in the tray menu, can fix it to Light or Dark), two columns when the window is wide (the game card beside the friends list), and sharp text on high-DPI screens (e.g. laptops at 150 %)
+> - a menu bar at the top left like other Windows apps (dark in dark mode too): File (hide to tray, exit), Session (guest link, guest controls, End session), Options (theme, offline friends, sounds, Start with Windows, automatic update checks) and Help (check for updates, release notes, the project page, About)
+> - End session (disconnect everyone, cancel unused invites and guest links, stop sharing), Copy guest link, and a Remove button for each guest
+> - clickable guest links (Steam leaves out `https://`)
+> - a separate control row for every guest, including Steam Link guests who join without a Steam account
+> - a fresh Remote Play group check before every invite, and a question instead of a silent watch-only fallback when Steam won't create one
+> - the game that will be shared, and who's connected, shown at the top of the main window; for a non-Steam game (which shares your whole screen) it asks once per session
+> - an "Everyone" row and in-game hotkeys: Ctrl+Alt+K / M / C turn keyboard / mouse / controller on or off for everyone, Ctrl+Alt+D takes all control, Ctrl+Alt+G gives it back
+> - a friend search box (it also finds what friends are playing), and one window at a time
+> - friends who appear offline are listed too (greyed out, in an Offline group you can fold away), so you can still invite someone who's invisible; the invite link reaches them in Steam chat
+> - what each online friend is doing, under their name: "Playing <game>" (named by Steam even if you don't have the game), Online, Away or Busy
+> - "Played with recently" at the top of the friends list: up to 8 friends who've joined your sessions, most recent first
+> - invites nobody has used yet are listed in the main window with a Cancel button each, so one friend's invite or a guest link can be withdrawn without ending the session
+> - Ctrl+Alt+L copies a guest link from inside a game (it creates one if needed, for Steam games), with a notification instead of a window popping up
+> - while your whole screen is shared (non-Steam games), Remote Play Whatever's own windows, including the guest link, are left out of the picture guests see (Windows 10 2004 or later)
+> - a tray icon: minimizing hides the window by the clock, its right-click menu has the session buttons and the options, and opening the app again brings the window back. "Start with Windows" (there or under Options) opens it in the tray when you sign in (it waits for Steam to start)
+> - short sounds when a guest joins or leaves (turn them off under Options or in the tray menu), and what each friend may use (keyboard, mouse, controller) is remembered for the next time they join
+> - updates itself: it checks this fork's releases when it starts and every few hours, and when there's a newer version an "Update" button downloads it, checks it and restarts the app (not during a Remote Play session), with a line about what's new. Help > Check for updates (also in the tray menu) checks right away, and Options has a switch to turn the automatic checks off. If a Steam update ever stops it from starting, the message it shows looks for a fixed version and offers to install it
+> - fixes: Steam calls are checked before they're made (so a Steam update can't make it call the wrong function; the one call Steam gives no name for is guarded too), clearer startup errors, and the control window no longer steals focus from a fullscreen game or keeps the app running after the main window is closed
 
 # RemotePlayWhatever
 Tiny application that lets you force remote play together any game you have in your steam library including non-steam ones.
@@ -19,14 +41,11 @@ RemotePlayWhatever communicates with your running Steam client and instructs it 
 > - **Use at Your Own Risk:** This tool communicates locally with Steam via its standard IPC channel and doesn't modify files. However, it relies on unstable, internal APIs used by the Steam client itself, not the stable APIs meant for games. These internal APIs can change with Steam updates, potentially breaking this tool without warning.
 
 ## Getting Started
-Download the latest RemotePlayWhatever [Release](https://github.com/m4dEngi/RemotePlayWhatever/releases/latest) for your system:
-- Linux: 
-    - **Arch**: A third-party [AUR package](https://aur.archlinux.org/packages/remoteplaywhatever) is available ( maintained by *Rojikku* ).
-    - **Ubuntu**: Download and install the *.**deb** package.
-    - **Any distro**: Download the *.**AppImage** and make it executable by running `chmod +x RemotePlayWhatever-*.AppImage`. \
-    *Note*: Some systems might require `fuse2` ( or alternative ) package to be installed for *AppImages* to work.
+Download the latest [release](https://github.com/Casual-Gamer8001/RemotePlayWhatever/releases/latest) of this fork:
 - Windows:
-    - Download and extract the RemotePlayWhatever-*.**zip** somewhere; no installation required.
+    - Download `RemotePlayWhatever-win64.zip`, extract it somewhere and run `RemotePlayWhatever.exe`; no installation required.
+- Linux:
+    - This fork doesn't publish Linux packages, so [build it from source](#building-from-source). The existing Linux packages (the Arch AUR package, and the *.deb and AppImage on the original project's releases page) are the original 0.2.14 version, which doesn't work with current Steam clients.
 
 ... or [build the app from source](#building-from-source)
 
@@ -36,8 +55,8 @@ Download the latest RemotePlayWhatever [Release](https://github.com/m4dEngi/Remo
 3. Launch the game you want to play *through the Steam client*.
 4. Alt+Tab (or switch) back to the RemotePlayWhatever window.
 5. Invite your friend(s):
-    - **Direct Invite:** Select a friend from the list. They will receive the invite link via a Steam Chat message.
-    - **Guest Link:** Click the button to generate a guest invite link. The link will be automatically copied to your clipboard, ready for you to paste and share manually.
+    - **Direct Invite:** Click **Invite** next to a friend. They will receive the invite link via a Steam Chat message.
+    - **Guest Link:** Click **Create guest link**. The link is copied to your clipboard, ready for you to paste and share manually (**Copy guest link** copies it again). Anyone can join with it, even without a Steam account: they open it and play through the free Steam Link app (on a phone, tablet, computer or TV). Each link lets one person in; **New guest link** makes another.
 6. Alt+Tab (or switch) back to your game.
 
 ## Command line arguments
@@ -58,7 +77,7 @@ Download the latest RemotePlayWhatever [Release](https://github.com/m4dEngi/Remo
     ```
 2. Clone the repository:
     ```bash
-    git clone --recurse-submodules https://github.com/m4dEngi/RemotePlayWhatever.git
+    git clone --recurse-submodules https://github.com/Casual-Gamer8001/RemotePlayWhatever.git
     cd RemotePlayWhatever
     ```
 3. Configure and build:
@@ -74,19 +93,19 @@ Download the latest RemotePlayWhatever [Release](https://github.com/m4dEngi/Remo
     ```
 
 ### Windows
-These instructions assume a 32-bit build using Visual Studio. \
+These instructions assume a 64-bit build using Visual Studio (the Steam-update fix only works in 64-bit builds). \
 All commands should be executed in a `Developer Command Prompt for VS`.
 
 1. Download and install [Visual Studio](https://visualstudio.microsoft.com/) (Community Edition is free) with the "Desktop development with C++" workload installed and "Git For Windows" and "MSVC v142 - VS 2019 C++ x64/x86 build tools" components.
-2. Download and install [wxWidgets](https://wxwidgets.org/) ( follow the docs ).
+2. Download and install [wxWidgets](https://wxwidgets.org/) ( follow the docs; you need its 64-bit libraries ).
 3. Clone the repository:
     ```bash
-    git clone --recurse-submodules https://github.com/m4dEngi/RemotePlayWhatever.git && 
+    git clone --recurse-submodules https://github.com/Casual-Gamer8001/RemotePlayWhatever.git && 
     cd RemotePlayWhatever
     ```
 4. Configure and build:
     ```bash
-    cmake -B build -A Win32
+    cmake -B build -A x64
     cmake --build build --config Release
     ```
     If build is successful, the executable will be created in the `build\RemotePlayWhatever\Release` folder.

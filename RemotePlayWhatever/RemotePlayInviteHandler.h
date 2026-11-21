@@ -2,6 +2,8 @@
 #define REMOTEPLAYINVITEHANDLER_H
 
 #include <Steamworks.h>
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -17,6 +19,7 @@ struct ConnectedGuest
     bool wantKbd;
     bool wantMouse;
     bool wantCtrl;
+    long long joinedAt; // when they connected (Unix time), for "Joined 12 min ago"
     // What the guest had before the host took all control (Ctrl+Alt+D), so
     // giving it back (Ctrl+Alt+G) restores exactly that.
     bool hasSaved;
@@ -72,8 +75,20 @@ public:
     // Disconnect one guest (their invite is cancelled too, so they can't rejoin
     // with it). Others stay connected.
     void RemoveGuest(uint64 key);
-    // The current session's guest link (with https://), or empty if none.
-    const std::string& GuestLink() const { return m_guestLink; }
+    // The newest guest link (with https://) that nobody has used or
+    // cancelled, or empty if there's none.
+    std::string GuestLink() const;
+
+    // Invites sent this session that nobody has used yet (a friend who
+    // hasn't joined, or a guest link nobody has opened).
+    struct WaitingInvite
+    {
+        uint64 steamID;     // the friend, or 0 for a guest link
+        uint32 guestID;     // the guest slot it's for
+    };
+    std::vector<WaitingInvite> WaitingInvites() const;
+    // Cancel one, so it stops working. A session with nothing left in it ends.
+    void CancelWaitingInvite(uint64 steamID, uint32 guestID);
 
     // Roster access + per-guest control, driven by the control window UI.
     // A guest's choices are saved per SteamID and applied when they rejoin.
@@ -122,7 +137,10 @@ private:
     uint64 m_sessionGame;       // game the current session is for (CGameID)
     int m_sessionGameGoneTicks;
     std::string m_notice;
-    std::string m_guestLink;
+    // Each guest link's URL, by the guest slot its invite reserved, and the
+    // slots of links someone has already come in with.
+    std::map<uint32, std::string> m_linkURLs;
+    std::set<uint32> m_takenLinks;
 
     std::vector<ConnectedGuest> m_guests;
     uint32 m_rosterRevision;

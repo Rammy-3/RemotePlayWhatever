@@ -3,14 +3,18 @@
 #include <string>
 #include <vector>
 #include <wx/datetime.h>
+#include <wx/dir.h>
 #include <wx/ffile.h>
 #include <wx/filefn.h>
 #include <wx/filename.h>
+#include <wx/time.h>
 #include <wx/utils.h>
 #ifdef __WXMSW__
+#include <wx/msw/wrapwin.h>
 #include <wx/msw/registry.h>
 #endif
 #include "GameInfo.h"
+#include "SteamStuff.h"
 
 static std::string ReadTextFile(const wxString& path)
 {
@@ -297,6 +301,125 @@ wxString GetGameName(CGameID game, uint32 accountID)
     if (game.IsShortcut())
     {
         return GetShortcutName(game.ModID(), accountID);
+    }
+    return wxString();
+}
+
+wxString GetFriendGameName(CGameID game)
+{
+    if (!game.IsValid() || !game.IsSteamApp())
+    {
+        return wxString();
+    }
+    const AppId_t appID = game.AppID();
+    static std::map<AppId_t, wxString> known;
+    static std::map<AppId_t, wxLongLong> askedAt;
+    auto it = known.find(appID);
+    if (it != known.end())
+    {
+        return it->second;
+    }
+    const wxLongLong now = wxGetLocalTimeMillis();
+    auto asked = askedAt.find(appID);
+    if (asked != askedAt.end() && now - asked->second < 60000)
+    {
+        return wxString();
+    }
+    askedAt[appID] = now;
+
+    wxString name = wxString::FromUTF8(GClientContext()->AppName(appID).c_str());
+    if (name.empty())
+    {
+        const wxString local = GetSteamAppName(appID);
+        if (local != wxString::Format("App %u", (unsigned)appID))
+        {
+            name = local;
+        }
+    }
+    if (!name.empty())
+    {
+        known[appID] = name;
+    }
+    return name;
+}
+
+// The first of these files that exists in dir, or (with subfolders) in one of
+// its subfolders.
+static wxString FindFile(const wxString& dir, const std::vector<wxString>& names, bool subfolders)
+{
+    for (const wxString& name : names)
+    {
+        const wxString path = dir + "/" + name;
+        if (wxFileExists(path))
+        {
+            return path;
+        }
+    }
+    if (subfolders && wxDirExists(dir))
+    {
+        wxDir folder(dir);
+        wxString sub;
+        for (bool more = folder.IsOpened() && folder.GetFirst(&sub, wxEmptyString, wxDIR_DIRS); more;
+             more = folder.GetNext(&sub))
+        {
+            for (const wxString& name : names)
+            {
+                const wxString path = dir + "/" + sub + "/" + name;
+                if (wxFileExists(path))
+                {
+                    return path;
+                }
+            }
+        }
+    }
+    return wxString();
+}
+
+wxString GetGameArtworkPath(CGameID game, uint32 accountID)
+{
+    for (const wxString& root : SteamRoots())
+    {
+        if (game.IsSteamApp())
+        {
+            // appcache/librarycache/<appid>/: library_hero.jpg is the wide
+            // library banner, header.jpg the store one. Some files sit in a
+            // subfolder named by a hash. Older Steam versions kept them all in
+            // librarycache itself, as <appid>_library_hero.jpg and so on.
+            const unsigned appID = (unsigned)game.AppID();
+            const wxString cache = root + "/appcache/librarycache";
+            const wxString app = wxString::Format("%s/%u", cache, appID);
+            wxString path = FindFile(app, { "library_hero.jpg", "library_hero.png" }, true);
+            if (path.empty())
+            {
+                path = FindFile(app, { "header.jpg", "library_header.jpg" }, true);
+            }
+            if (path.empty())
+            {
+                path = FindFile(cache, { wxString::Format("%u_library_hero.jpg", appID),
+                                         wxString::Format("%u_header.jpg", appID) }, false);
+            }
+            if (!path.empty())
+            {
+                return path;
+            }
+        }
+        else if (game.IsShortcut())
+        {
+            // Custom artwork for a non-Steam game (set in Steam, or by tools
+            // such as SteamGridDB): userdata/<account>/config/grid/<id>_hero.png
+            // and similar, by the shortcut's id (older versions: the 64-bit game id).
+            const unsigned id = (unsigned)game.ModID();
+            const unsigned long long id64 = (unsigned long long)game.ToUint64();
+            const wxString grid = wxString::Format("%s/userdata/%u/config/grid", root, (unsigned)accountID);
+            const wxString path = FindFile(grid, { wxString::Format("%u_hero.png", id), wxString::Format("%u_hero.jpg", id),
+                                                   wxString::Format("%u.png", id), wxString::Format("%u.jpg", id),
+                                                   wxString::Format("%llu.png", id64), wxString::Format("%llu.jpg", id64) },
+                                           false);
+            if (!path.empty())
+            {
+                return path;
+            }
+        }
     }
     return wxString();
 }

@@ -10,6 +10,7 @@ ClientContext::ClientContext():
     m_pSteamUser(nullptr),
     m_pSteamFriends(nullptr),
     m_pSteamUtils(nullptr),
+    m_pSteamApps001(nullptr),
     m_pClientEngine(nullptr),
     m_ShuttingDown(false),
     m_Initialized(false),
@@ -31,15 +32,19 @@ bool ClientContext::Init()
     // Until something more specific is known, failing means Steam isn't there.
     m_initError = InitSteamNotRunning;
 
-    if (!OpenAPI_LoadLibrary())
-    {
-        return false;
-    }
-
-    m_pSteamClient = (ISteamClient019*)SteamInternal_CreateInterface(STEAMCLIENT_INTERFACE_VERSION_019);
+    // Steam's library only needs loading once: when Steam isn't running yet
+    // (the app started with Windows), Init() is simply called again later.
     if (!m_pSteamClient)
     {
-        return false;
+        if (!OpenAPI_LoadLibrary())
+        {
+            return false;
+        }
+        m_pSteamClient = (ISteamClient019*)SteamInternal_CreateInterface(STEAMCLIENT_INTERFACE_VERSION_019);
+        if (!m_pSteamClient)
+        {
+            return false;
+        }
     }
 
     m_hPipe = m_pSteamClient->CreateSteamPipe();
@@ -52,6 +57,9 @@ bool ClientContext::Init()
     if (!m_hUser)
     {
         m_initError = InitNotSignedIn;
+        // Nobody to talk to yet; don't keep a pipe open for the next try.
+        m_pSteamClient->BReleaseSteamPipe(m_hPipe);
+        m_hPipe = 0;
         return false;
     }
 
@@ -75,16 +83,28 @@ bool ClientContext::Init()
         return false;
     }
 
+    // Optional (game names in the friends list): the oldest SteamApps interface,
+    // kept for old games, still reads Steam's own information about any app.
+    m_pSteamApps001 = (ISteamApps001*)m_pSteamClient->GetISteamApps(m_hUser, m_hPipe, STEAMAPPS_INTERFACE_VERSION_001);
+
     m_pClientEngine = (IClientEngine*)SteamInternal_CreateInterface(CLIENTENGINE_INTERFACE_VERSION);
     if (!m_pClientEngine)
     {
         return false;
     }
 
-    IClientRemoteClientManager* pRemoteManager =
-        (IClientRemoteClientManager*)m_pClientEngine->GetIClientRemoteClientManager(m_hPipe);
-    if (!pRemoteManager)
+    // IClientEngine's methods carry no names in Steam's code (checked with Steam
+    // 1794536281), so the Remote Play manager is still fetched by position:
+    // GetIClientRemoteClientManager(pipe) is slot 56 in OpenSteamworks'
+    // declaration. The call is guarded (see clientvt::CallPipeGetterAt), so if
+    // Steam ever reorders the engine this fails as "Steam changed its
+    // functions" (and the app offers an update) instead of crashing.
+    static const int kRemoteClientManagerSlot = 56;
+    void* pRemoteManager = NULL;
+    if (!clientvt::CallPipeGetterAt(m_pClientEngine, kRemoteClientManagerSlot, m_hPipe, &pRemoteManager))
     {
+        clientvt::Log("[vt] Init: IClientEngine slot %d didn't give the Remote Play manager\n",
+                      kRemoteClientManagerSlot);
         return false;
     }
 
@@ -144,6 +164,25 @@ ISteamFriends015* ClientContext::SteamFriends()
 ISteamUtils009 *ClientContext::SteamUtils()
 {
     return m_pSteamUtils;
+}
+
+std::string ClientContext::AppName(AppId_t appID)
+{
+    if (!m_pSteamApps001 || !appID)
+    {
+        return std::string();
+    }
+    static const char* const keys[] = { "name", "common/name" };
+    for (const char* key : keys)
+    {
+        char name[256] = {};
+        if (m_pSteamApps001->GetAppData(appID, key, name, sizeof(name)) > 0 && name[0])
+        {
+            name[sizeof(name) - 1] = '\0';
+            return std::string(name);
+        }
+    }
+    return std::string();
 }
 
 void ClientContext::RunCallbacks()

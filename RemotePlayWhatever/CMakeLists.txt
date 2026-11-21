@@ -21,18 +21,13 @@ add_custom_target(OpenSteamAPI)
 set(OSW_ROOT "${CMAKE_CURRENT_LIST_DIR}/../open-steamworks")
 set(OSW_INCLUDE_PATH "${OSW_ROOT}/OpenSteamworks")
 set(OSW_LIB_ROOT "${OSW_ROOT}/OpenSteamAPI")
-# open-steamworks' projects pin the VS 2019 toolset (v142). Build them with the
-# MSVC toolset configuring this project, so VS 2022 and newer work too.
-if(MSVC AND MSVC_TOOLSET_VERSION)
-    set(OSW_MSBUILD_TOOLSET "/p:PlatformToolset=v${MSVC_TOOLSET_VERSION}")
-endif()
 if(${SYSTEM_OS} STREQUAL "Win")
     if(${SYSTEM_ARCH} STREQUAL "64")
         set(OSW_LIB_PATH "${OSW_LIB_ROOT}/lib/${SYSTEM_OS}${SYSTEM_ARCH}/OpenSteamAPI64.lib")
         set(OSW_DLL_PATH "${OSW_LIB_ROOT}/lib/${SYSTEM_OS}${SYSTEM_ARCH}/OpenSteamAPI64.dll")
         add_custom_command(TARGET OpenSteamAPI
             WORKING_DIRECTORY "${OSW_ROOT}"
-            COMMAND msbuild /p:Platform=x64 /p:Configuration=Release ${OSW_MSBUILD_TOOLSET}
+            COMMAND msbuild /p:Platform=x64 /p:Configuration=Release
             VERBATIM
         )
     else()
@@ -40,7 +35,7 @@ if(${SYSTEM_OS} STREQUAL "Win")
         set(OSW_DLL_PATH "${OSW_LIB_ROOT}/lib/${SYSTEM_OS}${SYSTEM_ARCH}/OpenSteamAPI.dll")
         add_custom_command(TARGET OpenSteamAPI
             WORKING_DIRECTORY "${OSW_ROOT}"
-            COMMAND msbuild /p:Platform=Win32 /p:Configuration=Release ${OSW_MSBUILD_TOOLSET}
+            COMMAND msbuild /p:Platform=Win32 /p:Configuration=Release
             VERBATIM
         )
     endif()
@@ -56,12 +51,29 @@ endif()
 
 
 
-find_package(wxWidgets COMPONENTS core base adv)
+if(${SYSTEM_OS} STREQUAL "Win")
+    # Release builds update themselves over HTTPS; wxWebRequest is in wx's net library.
+    find_package(wxWidgets COMPONENTS core base adv net)
+else()
+    find_package(wxWidgets COMPONENTS core base adv)
+endif()
 if(NOT wxWidgets_FOUND)
     message(FATAL_ERROR "wxWidgets not found!")
 endif()
 
 include(${wxWidgets_USE_FILE})
+
+# Release builds made by GitHub Actions know their build number and whose
+# releases they come from, so they can offer updates. Local builds (0) don't.
+set(RPW_BUILD_NUMBER 0 CACHE STRING "Release build number (0 = local build, no update checks)")
+set(RPW_UPDATE_REPO "" CACHE STRING "GitHub owner/repo whose releases this build updates itself from")
+if(NOT RPW_BUILD_NUMBER MATCHES "^[0-9]+$")
+    message(FATAL_ERROR "RPW_BUILD_NUMBER must be a number, not '${RPW_BUILD_NUMBER}'")
+endif()
+if(NOT RPW_UPDATE_REPO MATCHES "^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?$")
+    message(FATAL_ERROR "RPW_UPDATE_REPO must look like owner/repo, not '${RPW_UPDATE_REPO}'")
+endif()
+configure_file(BuildInfo.h.in "${CMAKE_CURRENT_BINARY_DIR}/BuildInfo.h" @ONLY)
 
 set(APPSRCs "RemotePlayWhatever.cpp"
             "ClientVTableByName.h"
@@ -77,8 +89,8 @@ set(APPSRCs "RemotePlayWhatever.cpp"
             "FriendsListFrame.cpp"
             "ControlFrame.h"
             "ControlFrame.cpp"
-            "ClickablePanel.h"
-            "ClickablePanel.cpp"
+            "UiWidgets.h"
+            "UiWidgets.cpp"
             "FriendPanel.h"
             "FriendPanel.cpp"
             "wxSteamStuff.h"
@@ -89,11 +101,16 @@ set(APPSRCs "RemotePlayWhatever.cpp"
             "UiHelpers.cpp"
             "TrayIcon.h"
             "TrayIcon.cpp"
+            "Updater.h"
+            "Updater.cpp"
+            "UpdateNeededDialog.h"
+            "UpdateNeededDialog.cpp"
 )
 
 
 if(${SYSTEM_OS} STREQUAL "Win")
-    add_executable(RemotePlayWhatever WIN32 ${APPSRCs} "appresource.rc")
+    # The .manifest is merged into the exe's manifest (DPI awareness).
+    add_executable(RemotePlayWhatever WIN32 ${APPSRCs} "appresource.rc" "RemotePlayWhatever.manifest")
     add_custom_command(TARGET RemotePlayWhatever POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy ${OSW_DLL_PATH} $<TARGET_FILE_DIR:RemotePlayWhatever>
     )
@@ -104,10 +121,11 @@ add_dependencies(RemotePlayWhatever OpenSteamAPI)
 
 target_compile_definitions(RemotePlayWhatever PRIVATE STEAMWORKS_CLIENT_INTERFACES)
 target_include_directories(RemotePlayWhatever PUBLIC ${OSW_INCLUDE_PATH} ${wxWidgets_INCLUDE_DIRS})
+target_include_directories(RemotePlayWhatever PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 target_link_libraries(RemotePlayWhatever ${OSW_LIB_PATH} ${wxWidgets_LIBRARIES})
 if(${SYSTEM_OS} STREQUAL "Win")
-    # PlaySound for the guest join/leave sounds.
-    target_link_libraries(RemotePlayWhatever winmm)
+    # PlaySound for the guest join/leave sounds; BCrypt (SHA-256) to check updates.
+    target_link_libraries(RemotePlayWhatever winmm bcrypt)
 endif()
 if(${SYSTEM_OS} STREQUAL "Linux")
     target_link_libraries(RemotePlayWhatever ${CMAKE_DL_LIBS})
@@ -125,3 +143,4 @@ if(${SYSTEM_OS} STREQUAL "Linux")
         include(CPack)
     endif()
 endif()
+

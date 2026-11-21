@@ -1,8 +1,13 @@
 #include <wx/cmdline.h>
+#include <wx/image.h>
 #include <wx/snglinst.h>
 #include <wx/taskbar.h>
+#include <wx/time.h>
 #include <wx/utils.h>
+#include "Updater.h"
+#include "UpdateNeededDialog.h"
 #include "RemoteApp.h"
+#include "UiHelpers.h"
 #include "wxSteamStuff.h"
 #include "FriendsListFrame.h"
 #include "ControlFrame.h"
@@ -20,6 +25,10 @@ static const wxCmdLineEntryDesc cmdLineDesc[] =
     { wxCMD_LINE_OPTION, "i", "invite",  "Send remote play invites to provided SteamID64s ( use 0 for guest link )", wxCMD_LINE_VAL_STRING },
     { wxCMD_LINE_OPTION, "g", "guestid", "Guest client id", wxCMD_LINE_VAL_NUMBER },
     { wxCMD_LINE_OPTION, "c", "cancel",  "Cancel invite for provided SteamID64 and GuestID", wxCMD_LINE_VAL_STRING },
+    { wxCMD_LINE_OPTION, nullptr, "updated-from", "process id of the copy that just updated this one",
+      wxCMD_LINE_VAL_NUMBER, wxCMD_LINE_HIDDEN },
+    { wxCMD_LINE_SWITCH, nullptr, "minimized", "start hidden in the tray, waiting for Steam if it isn't running yet "
+      "(how it starts with Windows)" },
     { wxCMD_LINE_NONE }
 };
 
@@ -31,7 +40,9 @@ RemoteApp::RemoteApp():
     m_oneshot(false),
     m_guestID(1),
     m_nonSteamID(0),
-    m_inviteToCancel(-1)
+    m_inviteToCancel(-1),
+    m_updatedFrom(0),
+    m_startMinimized(false)
 {
 }
 
@@ -63,6 +74,16 @@ bool RemoteApp::OnInit()
     if (!wxApp::OnInit())
         return false;
 
+    // Game pictures in the main window are JPEG and PNG files.
+    wxInitAllImageHandlers();
+
+    // Started by an update: let the old copy finish closing first, or the
+    // single-instance check below would find it and give up.
+    if (!m_oneshot && m_updatedFrom)
+    {
+        AppUpdater::WaitForOldCopy(m_updatedFrom);
+    }
+
     // Only one window at a time; a second launch brings the open one back
     // (from the tray, if it's hidden there). Command-line invites (one-shot
     // mode) can still run alongside it.
@@ -93,9 +114,40 @@ bool RemoteApp::OnInit()
             m_singleInstance = nullptr;
             return false;
         }
+
+        // The only copy running: remove what an earlier update left behind.
+        AppUpdater::CleanUp();
+        RefreshStartWithWindows();
     }
 
-    if (!GClientContext()->Init())
+    bool steamReady = GClientContext()->Init();
+    // Started with Windows: Steam may still be starting or signing in, so wait
+    // for it quietly (up to 10 minutes) instead of showing an error at sign-in.
+    if (!steamReady && !m_oneshot && m_startMinimized &&
+        GClientContext()->InitError() != ClientContext::InitMethodsMissing)
+    {
+        // Meanwhile, a copy opened by hand may take over (it gets the window).
+        delete m_singleInstance;
+        m_singleInstance = nullptr;
+        const wxLongLong giveUp = wxGetLocalTimeMillis() + 10 * 60 * 1000;
+        while (!steamReady && GClientContext()->InitError() != ClientContext::InitMethodsMissing &&
+               wxGetLocalTimeMillis() < giveUp)
+        {
+            wxMilliSleep(5000);
+            steamReady = GClientContext()->Init();
+        }
+        m_singleInstance = new wxSingleInstanceChecker();
+        if (!m_singleInstance->Create("RemotePlayWhatever-" + wxGetUserId()) || m_singleInstance->IsAnotherRunning())
+        {
+            return false;
+        }
+        if (!steamReady && GClientContext()->InitError() != ClientContext::InitMethodsMissing)
+        {
+            return false;   // no Steam this time; nothing to complain about
+        }
+    }
+
+    if (!steamReady)
     {
         wxString why;
         switch (GClientContext()->InitError())
@@ -110,6 +162,17 @@ bool RemoteApp::OnInit()
         default:
             why = "Steam isn't running. Start Steam and sign in, then open Remote Play Whatever again.";
             break;
+        }
+
+        // The fix for a Steam change is a newer version, and the main window's
+        // Update button is out of reach, so look for one right away.
+        if (!m_oneshot && GClientContext()->InitError() == ClientContext::InitMethodsMissing &&
+            AppUpdater::Supported())
+        {
+            std::cout << "Error: Could not initialize steam client library! " << why.utf8_str().data() << std::endl;
+            UpdateNeededDialog dialog(why);
+            dialog.ShowModal();
+            return false;
         }
 
 #ifndef _WIN32
@@ -140,16 +203,31 @@ int RemoteApp::OnRun()
     {
         m_callbackRunner.Start(200);
 
+        // Light or dark from the start (the windows read the palette as they're built).
+        ApplySavedTheme();
         m_friendsList = new FriendsListFrame(m_inviteHandler);
-        m_friendsList->Show(true);
 
         // Hidden until a guest connects, then it pops itself up.
         m_controlFrame = new ControlFrame(m_inviteHandler);
+        if (m_friendsList->GuestLinkHotKeyUsable())
+        {
+            m_controlFrame->AddShortcutHint('L', "copy a guest link");
+        }
 
         // Icon next to the clock; minimizing the main window hides it there.
-        if (wxTaskBarIcon::IsAvailable())
+        const bool tray = wxTaskBarIcon::IsAvailable();
+        if (tray)
         {
             m_friendsList->SetTray(new RpwTrayIcon(m_friendsList, m_controlFrame, m_inviteHandler));
+        }
+        // Title bars, scroll bars and tooltips too, now that the windows exist.
+        ApplySavedTheme();
+        // Started with Windows: stay in the tray until the host needs it.
+        m_friendsList->Show(!(m_startMinimized && tray));
+
+        if (m_updatedFrom)
+        {
+            m_friendsList->ShowNotice(wxString::Format("Updated to build %ld.", AppUpdater::CurrentBuild()));
         }
 
         return wxApp::OnRun();
@@ -245,6 +323,13 @@ bool RemoteApp::OnCmdLineParsed(wxCmdLineParser &parser)
         m_oneshot = true;
         inviteeStr64.ToULongLong(&m_inviteToCancel);
     }
+
+    long updatedFrom = 0;
+    if (parser.Found("updated-from", &updatedFrom) && updatedFrom > 0)
+    {
+        m_updatedFrom = (unsigned long)updatedFrom;
+    }
+    m_startMinimized = parser.FoundSwitch("minimized") == wxCMD_SWITCH_ON;
 
     return wxApp::OnCmdLineParsed(parser);
 }
