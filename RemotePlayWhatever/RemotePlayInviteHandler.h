@@ -122,9 +122,18 @@ private:
     enum EGroupState { GroupNone, GroupWaiting, GroupReady, GroupFailed };
     struct PendingInvite { CSteamID invitee; AppId_t appID; };
 
+    // The group Steam keeps for this host and the session's game, or 0 if
+    // there's none yet.
+    uint32 LiveGroup(class CRemoteClientManagerByName* rcm) const;
+    // Whether Steam has linked the group to the game's process yet (the
+    // overlay finds the game's group through that link).
+    bool GroupLinkedToGame(class CRemoteClientManagerByName* rcm, uint32 group) const;
+
     bool m_enabledDesktopStreaming;
     uint32 m_remoteGuestID;
     uint32 m_groupID;
+    uint32 m_gamePID;           // the game's overlay process, found per invite
+    uint32 m_lastLinkedGroup;   // diagnostics: last group Steam linked to it
     AppId_t m_nonsteamAppID;
 
     EGroupState m_groupState;

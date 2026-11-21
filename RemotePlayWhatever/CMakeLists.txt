@@ -110,6 +110,8 @@ set(APPSRCs "RemotePlayWhatever.cpp"
             "Updater.cpp"
             "UpdateNeededDialog.h"
             "UpdateNeededDialog.cpp"
+            "GameProcess.h"
+            "GameProcess.cpp"
 )
 
 

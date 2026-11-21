@@ -56,12 +56,50 @@ namespace clientvt
     // Opt-in diagnostics: set env RPW_VTDEBUG=1 to log the resolver's view of
     // the module (segments, scan progress, resolved names/indices) to stderr.
     // Off by default and effectively zero cost.
+    // Also on when an rpw-debug.log file already exists next to the executable
+    // (Windows), so a log can be collected however the app is started.
     inline bool DebugEnabled()
     {
         static int on = -1;
         if (on < 0)
+        {
             on = (std::getenv("RPW_VTDEBUG") != NULL) ? 1 : 0;
+#if defined(_WIN32)
+            char path[MAX_PATH];
+            DWORD n = ::GetModuleFileNameA(NULL, path, MAX_PATH);
+            char* slash = (n > 0 && n < MAX_PATH) ? std::strrchr(path, '\\') : NULL;
+            if (!on && slash)
+            {
+                slash[1] = '\0';
+                const std::string log = std::string(path) + "rpw-debug.log";
+                on = ::GetFileAttributesA(log.c_str()) != INVALID_FILE_ATTRIBUTES ? 1 : 0;
+            }
+#endif
+        }
         return on != 0;
+    }
+
+    // A GUI build has no console to show stderr, so the log also goes to
+    // rpw-debug.log next to the executable (Windows), appended to each run.
+    inline std::FILE* LogFile()
+    {
+        static std::FILE* file = nullptr;
+        static bool tried = false;
+        if (!tried)
+        {
+            tried = true;
+#if defined(_WIN32)
+            char path[MAX_PATH];
+            DWORD n = ::GetModuleFileNameA(NULL, path, MAX_PATH);
+            char* slash = (n > 0 && n < MAX_PATH) ? std::strrchr(path, '\\') : NULL;
+            if (slash)
+            {
+                slash[1] = '\0';
+                file = std::fopen((std::string(path) + "rpw-debug.log").c_str(), "a");
+            }
+#endif
+        }
+        return file;
     }
 
     inline void Log(const char* fmt, ...)
@@ -73,6 +111,18 @@ namespace clientvt
         std::vfprintf(stderr, fmt, ap);
         va_end(ap);
         std::fflush(stderr);
+        if (std::FILE* file = LogFile())
+        {
+#if defined(_WIN32)
+            SYSTEMTIME now;
+            ::GetLocalTime(&now);
+            std::fprintf(file, "[%02u:%02u:%02u.%03u] ", now.wHour, now.wMinute, now.wSecond, now.wMilliseconds);
+#endif
+            va_start(ap, fmt);
+            std::vfprintf(file, fmt, ap);
+            va_end(ap);
+            std::fflush(file);
+        }
     }
 
     // A single mapped, readable address range within a module.
