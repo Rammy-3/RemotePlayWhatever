@@ -1,5 +1,13 @@
 >[!NOTE]
-> **About this fork.** This fork works with current Steam clients. **To install on Windows,** download `RemotePlayWhatever-win64.zip` from the [latest release](https://github.com/Casual-Gamer8001/RemotePlayWhatever/releases/latest), unzip it anywhere and run `RemotePlayWhatever.exe` (everything it needs is included). From then on it keeps itself up to date: when a new version is published here, it offers a one-click update. Every push is built by GitHub Actions.
+> **About this fork.** This is Rammy-3's fork of RemotePlayWhatever, and it works with current Steam clients. **To install on Windows,** download `RemotePlayWhatever-win64.zip` from the [latest release](https://github.com/Rammy-3/RemotePlayWhatever/releases/latest), unzip it anywhere and run `RemotePlayWhatever.exe` (everything it needs is included). From then on it keeps itself up to date: when a new version is published here, it offers a one-click update. Every push is built by GitHub Actions.
+>
+> **Credits.** Most of the work in this fork was done by other people, and it's here thanks to the MIT license:
+> - [m4dEngi](https://github.com/m4dEngi) wrote the original [RemotePlayWhatever](https://github.com/m4dEngi/RemotePlayWhatever).
+> - [okabeeer](https://github.com/okabeeer) wrote the fix that makes it work with current Steam clients ([pull request #289](https://github.com/m4dEngi/RemotePlayWhatever/pull/289)).
+> - [Casual-Gamer8001](https://github.com/Casual-Gamer8001) wrote the rest of the features listed below, the self-updater and the GitHub Actions builds ([pull request #290](https://github.com/m4dEngi/RemotePlayWhatever/pull/290) and [Casual-Gamer8001's fork](https://github.com/Casual-Gamer8001/RemotePlayWhatever), which this fork is based on).
+> - Rammy-3 maintains this fork and made it build with Visual Studio 2022 alone.
+>
+> Every commit keeps its author's name in the history.
 >
 > It is upstream RemotePlayWhatever plus:
 > - the Steam-update fix from [pull request #289](https://github.com/m4dEngi/RemotePlayWhatever/pull/289) by @okabeeer: Steam's internal functions are looked up by name, so Steam updates don't break it, and invites create a real Remote Play Together group so guests can play, not just watch. **The fix only works in 64-bit builds** (`cmake -B build -A x64`).
@@ -24,6 +32,7 @@
 > - short sounds when a guest joins or leaves (turn them off under Options or in the tray menu), and what each friend may use (keyboard, mouse, controller) is remembered for the next time they join
 > - updates itself: it checks this fork's releases when it starts and every few hours, and when there's a newer version an "Update" button downloads it, checks it and restarts the app (not during a Remote Play session), with a line about what's new. Help > Check for updates (also in the tray menu) checks right away, and Options has a switch to turn the automatic checks off. If a Steam update ever stops it from starting, the message it shows looks for a fixed version and offers to install it
 > - fixes: Steam calls are checked before they're made (so a Steam update can't make it call the wrong function; the one call Steam gives no name for is guarded too), clearer startup errors, and the control window no longer steals focus from a fullscreen game or keeps the app running after the main window is closed
+> - builds with Visual Studio 2022 alone: open-steamworks is built with the installed MSVC toolset, so the VS 2019 (v142) build tools aren't needed (by Rammy-3)
 
 # RemotePlayWhatever
 Tiny application that lets you force remote play together any game you have in your steam library including non-steam ones.
@@ -41,7 +50,7 @@ RemotePlayWhatever communicates with your running Steam client and instructs it 
 > - **Use at Your Own Risk:** This tool communicates locally with Steam via its standard IPC channel and doesn't modify files. However, it relies on unstable, internal APIs used by the Steam client itself, not the stable APIs meant for games. These internal APIs can change with Steam updates, potentially breaking this tool without warning.
 
 ## Getting Started
-Download the latest [release](https://github.com/Casual-Gamer8001/RemotePlayWhatever/releases/latest) of this fork:
+Download the latest [release](https://github.com/Rammy-3/RemotePlayWhatever/releases/latest) of this fork:
 - Windows:
     - Download `RemotePlayWhatever-win64.zip`, extract it somewhere and run `RemotePlayWhatever.exe`; no installation required.
 - Linux:
@@ -77,7 +86,7 @@ Download the latest [release](https://github.com/Casual-Gamer8001/RemotePlayWhat
     ```
 2. Clone the repository:
     ```bash
-    git clone --recurse-submodules https://github.com/Casual-Gamer8001/RemotePlayWhatever.git
+    git clone --recurse-submodules https://github.com/Rammy-3/RemotePlayWhatever.git
     cd RemotePlayWhatever
     ```
 3. Configure and build:
@@ -96,11 +105,11 @@ Download the latest [release](https://github.com/Casual-Gamer8001/RemotePlayWhat
 These instructions assume a 64-bit build using Visual Studio (the Steam-update fix only works in 64-bit builds). \
 All commands should be executed in a `Developer Command Prompt for VS`.
 
-1. Download and install [Visual Studio](https://visualstudio.microsoft.com/) (Community Edition is free) with the "Desktop development with C++" workload installed and "Git For Windows" and "MSVC v142 - VS 2019 C++ x64/x86 build tools" components.
+1. Download and install [Visual Studio](https://visualstudio.microsoft.com/) (Community Edition is free) with the "Desktop development with C++" workload and the "Git For Windows" component installed (Visual Studio 2022's own build tools are enough; the VS 2019 v142 build tools aren't needed).
 2. Download and install [wxWidgets](https://wxwidgets.org/) ( follow the docs; you need its 64-bit libraries ).
 3. Clone the repository:
     ```bash
-    git clone --recurse-submodules https://github.com/Casual-Gamer8001/RemotePlayWhatever.git && 
+    git clone --recurse-submodules https://github.com/Rammy-3/RemotePlayWhatever.git && 
     cd RemotePlayWhatever
     ```
 4. Configure and build:
@@ -115,6 +124,9 @@ Contributions are welcome! If you find a bug or have a feature request, please o
 
 ## Acknowledgements
 - Original idea and initial testing by @Jondycz
+- Original application by [m4dEngi](https://github.com/m4dEngi)
+- Current-Steam fix by [okabeeer](https://github.com/okabeeer) ([pull request #289](https://github.com/m4dEngi/RemotePlayWhatever/pull/289))
+- New features, self-updater and release builds by [Casual-Gamer8001](https://github.com/Casual-Gamer8001) ([pull request #290](https://github.com/m4dEngi/RemotePlayWhatever/pull/290), [Casual-Gamer8001's fork](https://github.com/Casual-Gamer8001/RemotePlayWhatever))
 
 ## Alternatives
 Steam
